@@ -3,7 +3,7 @@ name: Monorepo CI (Frontend & Backend)
 on:
   push:
     branches:
-      - main
+      - cicd
     paths:
       - 'frontend/**'
       - 'app/**'
