@@ -1,0 +1,250 @@
+# version: '3.8'
+# services:
+#   postgres:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_USER: ${POSTGRES_USER}
+#       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+#       POSTGRES_DB: ${POSTGRES_DB}
+#     ports:
+#       - "5432:5432"
+#     volumes:
+#       - pgdata:/var/lib/postgresql/data
+
+#   redis:
+#     image: redis:7
+#     ports:
+#       - "6379:6379"
+
+#   zookeeper:
+#     image: confluentinc/cp-zookeeper:7.4.0
+#     environment:
+#       ZOOKEEPER_CLIENT_PORT: 2181
+#       ZOOKEEPER_TICK_TIME: 2000
+
+#   kafka:
+#     image: confluentinc/cp-kafka:7.4.0
+#     depends_on:
+#       - zookeeper
+#     environment:
+#       KAFKA_BROKER_ID: 1
+#       KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+#       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+#       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+#     ports:
+#       - "9092:9092"
+
+#   app:
+#     build: ./
+#     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+#     volumes:
+#       - ./:/code
+#     env_file:
+#       - .env
+#     depends_on:
+#       - postgres
+#       - redis
+#       - kafka
+#     ports:
+#       - "8000:8000"
+
+#   frontend:
+#     build:
+#       context: ./frontend
+#       dockerfile: Dockerfile
+#     command: npm run dev
+#     volumes:
+#       - ./frontend:/app
+#       - /app/node_modules
+#     environment:
+#       NEXT_PUBLIC_API_URL: http://localhost:8000
+#     depends_on:
+#       - app
+#     ports:
+#       - "3000:3000"
+
+#   prometheus:
+#     image: prom/prometheus:latest
+#     volumes:
+#       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+#       - prometheus_data:/prometheus
+#     command:
+#       - '--config.file=/etc/prometheus/prometheus.yml'
+#       - '--storage.tsdb.path=/prometheus'
+#     ports:
+#       - "9090:9090"
+#     depends_on:
+#       - app
+
+#   grafana:
+#     image: grafana/grafana:latest
+#     environment:
+#       GF_SECURITY_ALLOW_EMBEDDING: "true"
+#       GF_AUTH_COOKIE_SAMESITE: "none"
+      
+#       GF_SECURITY_ADMIN_PASSWORD: admin
+#       GF_SECURITY_ADMIN_USER: admin
+#       GF_INSTALL_PLUGINS: grafana-piechart-panel
+
+#     ports:
+#       - "3001:3000"
+#     volumes:
+#       - grafana_data:/var/lib/grafana
+#       - ./grafana-provisioning:/etc/grafana/provisioning
+#     depends_on:
+#       - prometheus
+
+# volumes:
+#   pgdata:
+#   prometheus_data:
+#   grafana_data:
+
+
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7
+    # command: redis-server --requirepass ${REDIS_PASSWORD}
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      zookeeper:
+        condition: service_started
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
+    networks:
+      - internal
+      - public
+    ports:
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    command: npm run dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - app
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - public
+    security_opt:
+      - no-new-privileges:true
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    networks:
+      - internal
+    ports:
+      - "127.0.0.1:9090:9090"
+    security_opt:
+      - no-new-privileges:true
+
+  grafana:
+    image: grafana/grafana:latest
+    env_file:
+      - .env
+    environment:
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_COOKIE_SAMESITE: "none"
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - internal
+      - public
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - prometheus
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  pgdata:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  public:
+    driver: bridge
