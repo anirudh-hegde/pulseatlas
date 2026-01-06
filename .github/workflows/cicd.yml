@@ -1,0 +1,81 @@
+name: Monorepo CI (Frontend & Backend)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'app/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  # ======================================================
+  # JOB 0: DETECT CHANGES
+  # ======================================================
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            backend:
+              - 'app/**'
+
+  # ======================================================
+  # JOB 1: FRONTEND JOB
+  # ======================================================
+  frontend:
+    name: Frontend Job
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Frontend changed
+        run: |
+          echo "✅ Frontend code changed"
+          echo "Run frontend tests / build here"
+
+      # Example (optional)
+      # - run: |
+      #     cd Frontend
+      #     npm install
+      #     npm run build
+
+  # ======================================================
+  # JOB 2: BACKEND JOB
+  # ======================================================
+  backend:
+    name: Backend Job
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Backend changed
+        run: |
+          echo "✅ Backend code changed"
+          echo "Run backend tests / lint here"
+
+      # Example (optional)
+      # - run: |
+      #     cd Backend
+      #     pip install -r requirements.txt
+      #     pytest
